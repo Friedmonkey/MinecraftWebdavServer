@@ -25,6 +25,7 @@ internal class Program
             goto Confirmation;
         }
 
+        ConsoleColor closeColor = ConsoleColor.Green;
 
         try
         {
@@ -62,12 +63,12 @@ internal class Program
                 Console.WriteLine(line);
             }
             Console.ResetColor();
-
-            Console.WriteLine();
-            Print("Program closed.",ConsoleColor.Red);
-            Console.WriteLine("Press any key to close...");
-            Console.ReadKey();
+            closeColor = ConsoleColor.Red;
         }
+        Console.WriteLine();
+        Print("Program closed.",closeColor);
+        Console.WriteLine("Press any key to close...");
+        Console.ReadKey();
     }
     private static string? GetLatestBackup() 
     {
@@ -145,9 +146,26 @@ internal class Program
         var opt = Console.ReadLine();
         if (opt.ToLower() != "y" && opt.ToLower() != string.Empty)
         {
+            if (opt.ToLower() == "s")
+            {
+                Print("!Skipped Downloading!",ConsoleColor.DarkYellow);
+                var backup = GetLatestBackup();
+                if (backup == null)
+                {
+                    PrintError($"No backups were found in: \"{BasePath}\"");
+                    return;
+                }
+                else
+                {
+                    path = backup;
+                }
+                goto SkippedDownloading;
+            }
             backupIsRecentEnough = !backupIsRecentEnough;
             goto RecentCheck;
         }
+
+
 
         if (backupIsRecentEnough)
         {
@@ -163,6 +181,7 @@ internal class Program
             if (path == null) return;
             Print("Full Download of ALL files Complete!", ConsoleColor.DarkGreen);
         }
+        SkippedDownloading:
 
         var batFile = @$"{path}\start_server.bat";
 
@@ -173,10 +192,11 @@ internal class Program
         }
         ProcessStartInfo psi = new ProcessStartInfo();
         psi.FileName = batFile;
-        psi.RedirectStandardOutput = true;
-        psi.RedirectStandardError = true;
-        psi.RedirectStandardInput = true;
-        psi.UseShellExecute = false;
+        psi.WorkingDirectory = path;
+        //psi.RedirectStandardOutput = true;
+        //psi.RedirectStandardError = true;
+        //psi.RedirectStandardInput = true;
+        //psi.UseShellExecute = false;
         var result = Process.Start(psi);
         result.WaitForExit();
 
@@ -190,6 +210,11 @@ internal class Program
         var uploadOpt = Console.ReadLine();
         if (uploadOpt.ToLower() != "y" && uploadOpt.ToLower() != string.Empty)
         {
+            if (opt.ToLower() == "s")
+            {
+                Print("!Skipped Uploading!", ConsoleColor.DarkYellow);
+                return;
+            }
             uploadBackupIsRecentEnough = !uploadBackupIsRecentEnough;
             goto UploadRecentCheck;
         }
@@ -311,9 +336,10 @@ internal class Program
     }
     public static string QuickDownload()
     {
-        var backups = Directory.EnumerateDirectories(BasePath).ToList();
-        backups.Sort();
-        var backup = backups.FirstOrDefault();
+        //var backups = Directory.EnumerateDirectories(BasePath).ToList();
+        //backups.Sort();
+        //var backup = backups.FirstOrDefault();
+        var backup = GetLatestBackup();
         if (backup == null)
         {
             PrintError($"No backups were found in: \"{BasePath}\"");
@@ -323,7 +349,7 @@ internal class Program
         var path = @$"{backup}\world";
 
         Copy(@$"{DriveLetter}:\Server\world", path);
-        return path;
+        return backup;
     }
     public static void Upload(string path)
     {
@@ -335,8 +361,9 @@ internal class Program
         }
         Copy(path, @$"{DriveLetter}:\Server");
     }
-    public static void QuickUpload(string path)
+    public static void QuickUpload(string rawPath)
     {
+        var path = @$"{rawPath}\world";
         if (!Directory.Exists(path))
         {
             PrintError($"path:\"{path}\" Does not exist!");
