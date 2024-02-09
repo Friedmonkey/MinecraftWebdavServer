@@ -16,7 +16,7 @@ internal class Program
         Console.WriteLine($"Program is set to \"{args[0]}\", Do you want to execute? [y/n]");
         var opt = Console.ReadLine();
         OptCheck:
-        if (opt.ToLower() != "y")
+        if (opt.ToLower() != "y" && opt.ToLower() != string.Empty)
         { 
             ListOptions();
             Console.WriteLine("What else do you want to run? (e.g. \"-download\")");
@@ -26,36 +26,54 @@ internal class Program
         }
 
 
-        switch (args[0].ToLower())
+        try
         {
-            case "-run":
-                Run();
-                break;
-            case "-download":
-                Download();
-                break;
-            case "-upload":
-                {
-                    var backup = GetLatestBackup();
-                    if (backup == null)
+            switch (args[0].ToLower())
+            {
+                case "-run":
+                    Run();
+                    break;
+                case "-download":
+                    Download();
+                    break;
+                case "-upload":
                     {
-                        PrintError($"No backups were found in: \"{BasePath}\"");
-                        return;
+                        var backup = GetLatestBackup();
+                        if (backup == null)
+                        {
+                            PrintError($"No backups were found in: \"{BasePath}\"");
+                            return;
+                        }
+                        Upload(backup);
+
                     }
-                    Upload(backup);
-                
-                }
-                break;
-            default:
-                PrintError($"Command \"{args[0]}\" not found!");
-                opt = "n";
-                goto OptCheck;
+                    break;
+                default:
+                    PrintError($"Command \"{args[0]}\" not found!");
+                    opt = "n";
+                    goto OptCheck;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            foreach (var line in ex.ToString().Split('\n'))
+            {
+                Console.WriteLine(line);
+            }
+            Console.ResetColor();
+
+            Console.WriteLine();
+            Print("Program closed.",ConsoleColor.Red);
+            Console.WriteLine("Press any key to close...");
+            Console.ReadKey();
         }
     }
     private static string? GetLatestBackup() 
     {
         var backups = Directory.EnumerateDirectories(BasePath).ToList();
         backups.Sort();
+        backups.Reverse();
         var backup = backups.FirstOrDefault();
         return backup;
     }
@@ -66,9 +84,10 @@ internal class Program
             var backup = GetLatestBackup();
             if (backup == null) return false;
             var fileName = Path.GetFileName(backup);
-            var split1 = fileName.Split('_');
-            var date = split1.First();
-            var time = split1.Last();
+            var split1 = fileName.Split(' ');
+            var split2 = split1.First().Split('_');
+            var date = split2.First();
+            var time = split2.Last();
             var dateSegments = date.Split('-');
             var timeSegments = time.Split('-');
 
@@ -116,18 +135,32 @@ internal class Program
     public static void Run() 
     {
         string path = string.Empty;
-        if (BackupIsRecentEnough(StartupRecentEnough))
+        bool backupIsRecentEnough = BackupIsRecentEnough(StartupRecentEnough);
+        RecentCheck:
+        var WASnt = backupIsRecentEnough ? "WAS" : "was NOT";
+        var WILLnt = backupIsRecentEnough ? "will NOT" : "WILL";
+        Console.WriteLine();
+        Print($"The backup {WASnt} recent enough, so saving the files {WILLnt} take long to upload. Do you agree with this? [y/n]", ConsoleColor.Cyan);
+
+        var opt = Console.ReadLine();
+        if (opt.ToLower() != "y" && opt.ToLower() != string.Empty)
+        {
+            backupIsRecentEnough = !backupIsRecentEnough;
+            goto RecentCheck;
+        }
+
+        if (backupIsRecentEnough)
         {
             Print("Quick Downloading files...", ConsoleColor.Cyan);
             path = QuickDownload();
-            Console.Clear();
+            if (path == null) return;
             Print("Quick Download Complete!", ConsoleColor.Green);
         }
         else
         {
             Print("Full Downloading ALL files...", ConsoleColor.Blue);
             path = Download();
-            Console.Clear();
+            if (path == null) return;
             Print("Full Download of ALL files Complete!", ConsoleColor.DarkGreen);
         }
 
@@ -147,9 +180,21 @@ internal class Program
         var result = Process.Start(psi);
         result.WaitForExit();
 
+        bool uploadBackupIsRecentEnough = BackupIsRecentEnough(ClosingRecentEnough);
+        UploadRecentCheck:
+        var uWASnt = uploadBackupIsRecentEnough ? "WAS" : "was NOT";
+        var uWILLnt = uploadBackupIsRecentEnough ? "will NOT" : "WILL";
+        Console.WriteLine();
+        Print($"The backup {uWASnt} recent enough, so saving the files {uWILLnt} take long to upload. Do you agree with this? [y/n]", ConsoleColor.Cyan);
 
+        var uploadOpt = Console.ReadLine();
+        if (uploadOpt.ToLower() != "y" && uploadOpt.ToLower() != string.Empty)
+        {
+            uploadBackupIsRecentEnough = !uploadBackupIsRecentEnough;
+            goto UploadRecentCheck;
+        }
 
-        if (BackupIsRecentEnough(ClosingRecentEnough))
+        if (uploadBackupIsRecentEnough)
         {
             Print("Quick Uploading files...", ConsoleColor.Cyan);
             QuickUpload(path);
@@ -176,34 +221,42 @@ internal class Program
     }
     static void Copy(string sourceDir, string targetDir)
     {
-        if (!Directory.Exists(targetDir))
+        try
         {
-            Console.Clear();
-            Directory.CreateDirectory(targetDir);
-            PrintDirectory(targetDir);
-        }
+            if (!Directory.Exists(targetDir))
+            {
+                //Console.Clear();
+                Directory.CreateDirectory(targetDir);
+                PrintDirectory(targetDir);
+            }
 
-        string[] files = Directory.GetFiles(sourceDir);
-        foreach (string rawFile in files)
-        {
-            var file = rawFile;
-            bool skip = Parse(ref file);
-            if (skip) continue;
-            string fileName = Path.GetFileName(file);
-            string destFile = Path.Combine(targetDir, fileName);
-            File.Copy(file, destFile, true);
-            PrintTransfer(fileName);
-        }
+            string[] files = Directory.GetFiles(sourceDir);
+            foreach (string rawFile in files)
+            {
+                var file = rawFile;
+                bool skip = Parse(ref file);
+                if (skip) continue;
+                string fileName = Path.GetFileName(file);
+                string destFile = Path.Combine(targetDir, fileName);
+                File.Copy(file, destFile, true);
+                PrintTransfer(fileName);
+            }
 
-        string[] subDirectories = Directory.GetDirectories(sourceDir);
-        foreach (string rawSubDir in subDirectories)
+            string[] subDirectories = Directory.GetDirectories(sourceDir);
+            foreach (string rawSubDir in subDirectories)
+            {
+                var subDir = rawSubDir;
+                bool skip = Parse(ref subDir);
+                if (skip) continue;
+                string subDirName = Path.GetFileName(subDir);
+                string destSubDir = Path.Combine(targetDir, subDirName);
+                Copy(subDir, destSubDir);
+            }
+        }
+        catch (Exception ex)
         {
-            var subDir = rawSubDir; 
-            bool skip = Parse(ref subDir);
-            if (skip) continue;
-            string subDirName = Path.GetFileName(subDir);
-            string destSubDir = Path.Combine(targetDir, subDirName);
-            Copy(subDir, destSubDir);
+            PrintError($"Transfering failed: {ex.Message}");
+            throw ex;
         }
     }
     //private static void Copy(string src, string dest)
