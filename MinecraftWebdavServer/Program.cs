@@ -9,9 +9,18 @@ internal class Program
     public static readonly TimeSpan ClosingRecentEnough = TimeSpan.FromMinutes(40);
     private static void Main(string[] args)
     {
+        //setting default argument
         if (args.Length != 1)
             args = new string[] { "-Run" };
 
+        //making base path if it doest exist yet
+        if (!Directory.Exists(BasePath)) 
+        {
+            Directory.CreateDirectory(BasePath);
+            Print($"Directory \"{BasePath}\" created, all servers will be stored there!", ConsoleColor.Cyan);
+        }
+
+        //letting user know what option the program is running in and if they want to change it
         Confirmation:
         Console.WriteLine($"Program is set to \"{args[0]}\", Do you want to execute? [y/n]");
         var opt = Console.ReadLine();
@@ -26,10 +35,12 @@ internal class Program
         }
 
         ConsoleColor closeColor = ConsoleColor.Green;
+        var val = args[0].ToLower();
+
 
         try
         {
-            switch (args[0].ToLower())
+            switch (val)
             {
                 case "-run":
                     Run();
@@ -37,7 +48,11 @@ internal class Program
                 case "-download":
                     Download();
                     break;
+                case "-quickdownload":
+                    QuickDownload();
+                    break;
                 case "-upload":
+                case "-quickupload":
                     {
                         var backup = GetLatestBackup();
                         if (backup == null)
@@ -45,10 +60,14 @@ internal class Program
                             PrintError($"No backups were found in: \"{BasePath}\"");
                             return;
                         }
-                        Upload(backup);
+                        if (val == "-upload")
+                            Upload(backup);
+                        else if (val == "-quickupload")
+                            QuickUpload(backup);
 
                     }
                     break;
+
                 default:
                     PrintError($"Command \"{args[0]}\" not found!");
                     opt = "n";
@@ -57,6 +76,7 @@ internal class Program
         }
         catch (Exception ex)
         {
+            //if something went wrong somewhere, then log the error nicely
             Console.ForegroundColor = ConsoleColor.Red;
             foreach (var line in ex.ToString().Split('\n'))
             {
@@ -70,6 +90,10 @@ internal class Program
         Console.WriteLine("Press any key to close...");
         Console.ReadKey();
     }
+    /// <summary>
+    /// Gets the latest backup
+    /// </summary>
+    /// <returns>string filepath or null when no backups found</returns>
     private static string? GetLatestBackup() 
     {
         var backups = Directory.EnumerateDirectories(BasePath).ToList();
@@ -78,6 +102,11 @@ internal class Program
         var backup = backups.FirstOrDefault();
         return backup;
     }
+    /// <summary>
+    /// determines if the latest backup is recent enough
+    /// </summary>
+    /// <param name="RecentEnough">how recent the backup must be</param>
+    /// <returns>bool if its recent (within range of <ref name="RecentEnough">RecentEnough</ref>)</returns>
     private static bool BackupIsRecentEnough(TimeSpan RecentEnough)
     {
         try
@@ -113,6 +142,9 @@ internal class Program
             return false;
         }
     }
+    /// <summary>
+    /// Print out all possible options.
+    /// </summary>
     private static void ListOptions() 
     {
         Console.ForegroundColor = ConsoleColor.Cyan;
@@ -120,19 +152,40 @@ internal class Program
         Console.WriteLine("MinecraftWebdavServer -Run");
         Console.WriteLine("MinecraftWebdavServer -Download");
         Console.WriteLine("MinecraftWebdavServer -Upload");
+        Console.WriteLine("MinecraftWebdavServer -QuickDownload");
+        Console.WriteLine("MinecraftWebdavServer -QuickUpload");
         Console.WriteLine();
         Console.ResetColor();
     }
+    /// <summary>
+    /// Console.ForegroundColor = color;
+    /// Console.WriteLine(msg);
+    /// Console.ResetColor();
+    /// 
+    /// prints message with color and resets afterwards
+    /// 
+    /// </summary>
+    /// <param name="msg">the message to print</param>
+    /// <param name="color">the color to print in</param>
     private static void Print(string msg, ConsoleColor color)
     {
         Console.ForegroundColor = color;
         Console.WriteLine(msg);
         Console.ResetColor();
     }
+    /// <summary>
+    /// Print an message but with always red text prefex by "Error: "
+    /// </summary>
+    /// <param name="error">The error message</param>
     private static void PrintError(string error) => Print($"Error: {error}", ConsoleColor.Red);
-    private static void PrintTransfer(string file) => Print($"Transfer Complete: {file}", ConsoleColor.Green);
-    private static void PrintDirectory(string file) => Print($"Directory Created: {file}", ConsoleColor.Cyan);
 
+    /// <summary>
+    /// The main run method with some extra shits and giggles
+    /// 1. Downloads the server.
+    /// 2. Runs the server.
+    /// 3. Stops the server.
+    /// 4. Uploads the server.
+    /// </summary>
     public static void Run() 
     {
         string path = string.Empty;
@@ -141,7 +194,7 @@ internal class Program
         var WASnt = backupIsRecentEnough ? "WAS" : "was NOT";
         var WILLnt = backupIsRecentEnough ? "will NOT" : "WILL";
         Console.WriteLine();
-        Print($"The backup {WASnt} recent enough, so saving the files {WILLnt} take long to upload. Do you agree with this? [y/n]", ConsoleColor.Cyan);
+        Print($"The backup {WASnt} recent enough, so retriving the files {WILLnt} take long to download. Do you agree with this? (Y)es/(N)o/(S)kip", ConsoleColor.Cyan);
 
         var opt = Console.ReadLine();
         if (opt.ToLower() != "y" && opt.ToLower() != string.Empty)
@@ -193,10 +246,6 @@ internal class Program
         ProcessStartInfo psi = new ProcessStartInfo();
         psi.FileName = batFile;
         psi.WorkingDirectory = path;
-        //psi.RedirectStandardOutput = true;
-        //psi.RedirectStandardError = true;
-        //psi.RedirectStandardInput = true;
-        //psi.UseShellExecute = false;
         var result = Process.Start(psi);
         result.WaitForExit();
 
@@ -205,7 +254,7 @@ internal class Program
         var uWASnt = uploadBackupIsRecentEnough ? "WAS" : "was NOT";
         var uWILLnt = uploadBackupIsRecentEnough ? "will NOT" : "WILL";
         Console.WriteLine();
-        Print($"The backup {uWASnt} recent enough, so saving the files {uWILLnt} take long to upload. Do you agree with this? [y/n]", ConsoleColor.Cyan);
+        Print($"The backup {uWASnt} recent enough, so saving the files {uWILLnt} take long to upload. Do you agree with this? (Y)es/(N)o/(S)kip", ConsoleColor.Cyan);
 
         var uploadOpt = Console.ReadLine();
         if (uploadOpt.ToLower() != "y" && uploadOpt.ToLower() != string.Empty)
@@ -232,6 +281,12 @@ internal class Program
             Print("Full Uploading of ALL files Complete!", ConsoleColor.DarkGreen);
         }
     }
+
+    /// <summary>
+    /// Parse a directory because the webdav returns them badly
+    /// </summary>
+    /// <param name="input">the file to potentually parse</param>
+    /// <returns>a bool weather it should be completely discarded</returns>
     private static bool Parse(ref string input)
     {
         if (input.StartsWith(DriveLetter))
@@ -244,6 +299,11 @@ internal class Program
         }
         return false;
     }
+    /// <summary>
+    /// Copy a directory and all its subdirectories to somewhere else
+    /// </summary>
+    /// <param name="sourceDir">the source directory</param>
+    /// <param name="targetDir">the target directory</param>
     static void Copy(string sourceDir, string targetDir)
     {
         try
@@ -252,7 +312,7 @@ internal class Program
             {
                 //Console.Clear();
                 Directory.CreateDirectory(targetDir);
-                PrintDirectory(targetDir);
+                Print($"Directory Created: {targetDir}", ConsoleColor.Cyan);
             }
 
             string[] files = Directory.GetFiles(sourceDir);
@@ -264,7 +324,7 @@ internal class Program
                 string fileName = Path.GetFileName(file);
                 string destFile = Path.Combine(targetDir, fileName);
                 File.Copy(file, destFile, true);
-                PrintTransfer(fileName);
+                Print($"Transfer Complete: {fileName}", ConsoleColor.Green);
             }
 
             string[] subDirectories = Directory.GetDirectories(sourceDir);
@@ -319,6 +379,10 @@ internal class Program
     //    backup.RetryOptions.RetryWaitTime = 2;
     //    backup.Start();
     //}
+    /// <summary>
+    /// Downloads the server.
+    /// </summary>
+    /// <returns>The path that the server was downloaded in</returns>
     public static string Download()
     {
 
@@ -334,6 +398,11 @@ internal class Program
         Copy(@$"{DriveLetter}:\Server", path);
         return path;
     }
+    /// <summary>
+    /// Quick downloads the server, by only downloading the world folder
+    /// (the folder thats most likely to have any mentionable changes at all)
+    /// </summary>
+    /// <returns>The path that the server was downloaded in</returns>
     public static string QuickDownload()
     {
         //var backups = Directory.EnumerateDirectories(BasePath).ToList();
@@ -351,6 +420,10 @@ internal class Program
         Copy(@$"{DriveLetter}:\Server\world", path);
         return backup;
     }
+    /// <summary>
+    /// Uploads the server.
+    /// </summary>
+    /// <param name="path">The path were to upload the server to.</param>
     public static void Upload(string path)
     {
         if (!Directory.Exists(path))
@@ -361,6 +434,11 @@ internal class Program
         }
         Copy(path, @$"{DriveLetter}:\Server");
     }
+    /// <summary>
+    /// Quickly uploads the server, by only uploading the world folder
+    /// (the folder thats most likely to have any mentionable changes at all)
+    /// </summary>
+    /// <param name="rawPath">The path where to upload the world folder to.</param>
     public static void QuickUpload(string rawPath)
     {
         var path = @$"{rawPath}\world";
@@ -373,8 +451,16 @@ internal class Program
         Copy(path, @$"{DriveLetter}:\Server\world");
     }
 }
+/// <summary>
+/// A simple static class for extending string
+/// </summary>
 public static class StringExtentions 
 {
+    /// <summary>
+    /// a nice and quick way to easily convert a string to an interger.
+    /// </summary>
+    /// <param name="input">the string to convert</param>
+    /// <returns>the converted int if it was successful or -1 if it wasnt</returns>
     public static int ToInt(this string input)
     {
         var success = int.TryParse(input, out int result);
